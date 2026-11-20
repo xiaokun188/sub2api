@@ -128,6 +128,8 @@ export default {
         models: '模型列表',
         modelsPlaceholder: '输入完整模型名后按回车添加',
         modelInputHint: '按回车添加，支持粘贴批量导入',
+        groupModelAllowlist: '分组白名单模型',
+        modelSuggestionHint: '勾选分组模型添加到此定价项，或输入自定义模型。',
         billingMode: '计费模式',
         defaultPrices: '默认价格（未命中区间时使用）',
         inputPrice: '输入',

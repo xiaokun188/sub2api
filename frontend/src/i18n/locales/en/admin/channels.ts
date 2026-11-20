@@ -128,6 +128,8 @@ export default {
         models: 'Models',
         modelsPlaceholder: 'Type full model name and press Enter',
         modelInputHint: 'Press Enter to add, supports paste for batch import.',
+        groupModelAllowlist: 'Group allowlist models',
+        modelSuggestionHint: 'Check group models to add them to this pricing entry, or type a custom model.',
         billingMode: 'Billing Mode',
         defaultPrices: 'Default prices (fallback when no interval matches)',
         inputPrice: 'Input',
