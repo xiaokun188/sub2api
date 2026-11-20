@@ -448,6 +448,7 @@
                   :key="idx"
                   :entry="entry"
                   :platform="section.platform"
+                  :model-candidates="pricingModelCandidates[section.platform] || []"
                   enable-time-pricing
                   enable-tier-multipliers
                   @update="updatePricingEntry(sIdx, idx, $event)"
@@ -761,6 +762,8 @@ const activeTab = ref<string>('basic')
 // Groups
 const allGroups = ref<AdminGroup[]>([])
 const groupsLoading = ref(false)
+const pricingModelCandidates = ref<Record<string, string[]>>({})
+const pricingModelsLoading = ref<Record<string, boolean>>({})
 
 // All channels for group-conflict detection (independent of current page)
 const allChannelsForConflict = ref<Channel[]>([])
@@ -867,6 +870,37 @@ function toggleGroupInSection(sectionIdx: number, groupId: number) {
     section.group_ids.splice(idx, 1)
   } else {
     section.group_ids.push(groupId)
+  }
+  void loadPricingModelCandidates(section)
+}
+
+async function loadPricingModelCandidates(section: PlatformSection) {
+  const groups = allGroups.value.filter(group =>
+    section.group_ids.includes(group.id) && group.platform === section.platform
+  )
+  if (groups.length === 0) {
+    pricingModelCandidates.value[section.platform] = []
+    return
+  }
+  pricingModelsLoading.value[section.platform] = true
+  try {
+    const lists = await Promise.all(groups.map(async group => {
+      const candidates = await adminAPI.groups.getModelAllowlistCandidates(group.id, section.platform)
+      const allowlist = group.model_allowlist
+      if (!allowlist?.enabled) return candidates
+      const allowed = allowlist.models || []
+      return candidates.filter(model => allowed.some(pattern =>
+        pattern.endsWith('*')
+          ? model.toLowerCase().startsWith(pattern.slice(0, -1).toLowerCase())
+          : model.toLowerCase() === pattern.toLowerCase()
+      ))
+    }))
+    pricingModelCandidates.value[section.platform] = [...new Set(lists.flat())].sort((a, b) => a.localeCompare(b))
+  } catch (error) {
+    console.warn('Failed to load group pricing model candidates:', error)
+    pricingModelCandidates.value[section.platform] = []
+  } finally {
+    pricingModelsLoading.value[section.platform] = false
   }
 }
 
@@ -1386,6 +1420,7 @@ async function openCreateDialog() {
   editingChannel.value = null
   resetForm()
   await Promise.all([loadGroups(), loadAllChannelsForConflict()])
+  pricingModelCandidates.value = {}
   showDialog.value = true
 }
 
@@ -1400,6 +1435,8 @@ async function openEditDialog(channel: Channel) {
   // Must load groups first so apiToForm can map groupID → platform
   await Promise.all([loadGroups(), loadAllChannelsForConflict()])
   form.platforms = apiToForm(channel)
+  pricingModelCandidates.value = {}
+  await Promise.all(form.platforms.map(section => loadPricingModelCandidates(section)))
 
   // Distribute channel-level rules into per-platform sections
   distributeRulesToPlatforms(channel.account_stats_pricing_rules || [])

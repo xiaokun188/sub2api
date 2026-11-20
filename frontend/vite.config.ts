@@ -162,7 +162,21 @@ export default defineConfig(({ mode }) => {
           target: backendUrl,
           changeOrigin: true
         },
-        '/setup': {
+        // Keep the frontend /setup route in Vite's SPA fallback while proxying
+        // only setup API endpoints to the backend.
+        '/setup/status': {
+          target: backendUrl,
+          changeOrigin: true
+        },
+        '/setup/test-db': {
+          target: backendUrl,
+          changeOrigin: true
+        },
+        '/setup/test-redis': {
+          target: backendUrl,
+          changeOrigin: true
+        },
+        '/setup/install': {
           target: backendUrl,
           changeOrigin: true
         }

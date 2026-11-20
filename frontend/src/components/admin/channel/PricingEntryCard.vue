@@ -76,6 +76,7 @@
             <ModelTagInput
               :models="entry.models"
               :platform="props.platform"
+              :suggestions="props.modelCandidates"
               @update:models="onModelsUpdate($event)"
               :placeholder="t('admin.channels.form.modelsPlaceholder')"
               class="mt-1"
@@ -328,6 +329,7 @@ const { t } = useI18n()
 const props = withDefaults(defineProps<{
   entry: PricingFormEntry
   platform?: string
+  modelCandidates?: string[]
   hideTokenIntervals?: boolean
   enableTimePricing?: boolean
   enableTierMultipliers?: boolean

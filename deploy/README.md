@@ -16,6 +16,8 @@ This directory contains files for deploying Sub2API on Linux servers and Apple-s
 |------|-------------|
 | `docker-compose.yml` | Docker Compose configuration (named volumes) |
 | `docker-compose.local.yml` | Docker Compose configuration (local directories, easy migration) |
+| `docker-compose.baota.yml` | 宝塔面板源码构建配置（仅运行应用容器，连接宿主机 PostgreSQL/Redis） |
+| `BAOTA_CN.md` | 宝塔面板镜像构建与容器部署说明 |
 | `docker-deploy.sh` | **One-click Docker deployment script (recommended)** |
 | `apple-container.sh` | Native Apple `container` lifecycle script |
 | `APPLE_CONTAINER.md` | Apple `container` deployment and operations guide |
