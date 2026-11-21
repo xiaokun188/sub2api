@@ -53,6 +53,7 @@
 
       <!-- Remove button (always visible, stop propagation) -->
       <button
+        v-if="!hideRemove"
         type="button"
         @click.stop="emit('remove')"
         class="flex-shrink-0 rounded p-1 text-gray-400 hover:text-red-500"
@@ -67,9 +68,8 @@
       :class="{ 'collapsible-content--collapsed': collapsed }"
     >
       <div class="collapsible-inner">
-        <!-- Header: Models + Billing Mode -->
-        <div class="mt-3 flex items-start gap-2">
-          <div class="flex-1">
+        <div class="mt-3">
+          <div v-if="!hideModelSelector" class="mb-3">
             <label class="text-xs font-medium text-gray-500 dark:text-gray-400">
               {{ t('admin.channels.form.models') }} <span class="text-red-500">*</span>
             </label>
@@ -82,7 +82,8 @@
               class="mt-1"
             />
           </div>
-          <div class="w-40">
+          <div class="flex items-start justify-end gap-2">
+            <div class="w-40">
             <label class="text-xs font-medium text-gray-500 dark:text-gray-400">
               {{ t('admin.channels.form.billingMode') }}
             </label>
@@ -97,9 +98,8 @@
               :options="billingModeOptions"
               class="mt-1"
             />
+            </div>
           </div>
-        </div>
-
         <!-- Token mode -->
         <div v-if="entry.billing_mode === 'token'">
           <!-- Default prices (fallback when no interval matches) -->
@@ -305,6 +305,7 @@
             {{ reasoningEffortMultiplierError }}
           </p>
         </div>
+        </div>
       </div>
     </div>
   </div>
@@ -330,6 +331,8 @@ const props = withDefaults(defineProps<{
   entry: PricingFormEntry
   platform?: string
   modelCandidates?: string[]
+  hideModelSelector?: boolean
+  hideRemove?: boolean
   hideTokenIntervals?: boolean
   enableTimePricing?: boolean
   enableTierMultipliers?: boolean
@@ -344,8 +347,8 @@ const emit = defineEmits<{
   remove: []
 }>()
 
-// Collapse state: entries with existing models default to collapsed
-const collapsed = ref(props.entry.models.length > 0)
+// Keep pricing entries open so the model list and pricing editor are visible together.
+const collapsed = ref(false)
 
 const billingModeOptions = computed(() => [
   { value: 'token', label: t('admin.channels.billingMode.token') },

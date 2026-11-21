@@ -119,6 +119,18 @@ export async function getModelAllowlistCandidates(
   return data.models || []
 }
 
+/** Get models explicitly saved as restrictions on accounts in a group. */
+export async function getSavedAccountRestrictionModels(
+  id: number,
+  platform?: GroupPlatform
+): Promise<string[]> {
+  const { data } = await apiClient.get<{ models: string[] }>(
+    `/admin/groups/${id}/model-allowlist-candidates`,
+    { params: { ...(platform ? { platform } : {}), source: 'saved-account-restrictions' } }
+  )
+  return data.models || []
+}
+
 /**
  * Create new group
  * @param groupData - Group data
@@ -478,6 +490,7 @@ export const groupsAPI = {
   getLiveCapability,
   getById,
   getModelAllowlistCandidates,
+  getSavedAccountRestrictionModels,
   create,
   duplicate,
   update,

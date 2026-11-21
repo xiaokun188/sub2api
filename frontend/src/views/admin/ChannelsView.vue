@@ -419,42 +419,17 @@
 
             <!-- Model Pricing -->
             <div>
-              <div class="mb-1 flex items-center justify-between">
-                <label class="input-label text-xs mb-0">{{ t('admin.channels.form.modelPricing', 'Model Pricing') }}</label>
-                <div class="flex items-center gap-2">
-                  <button
-                    v-if="supportsPricingModelSync(section.platform)"
-                    type="button"
-                    @click="syncLatestModels(sIdx)"
-                    :disabled="!!syncingPlatform"
-                    class="text-xs text-gray-500 hover:text-primary-600 disabled:opacity-50"
-                  >
-                    {{ syncingPlatform === section.platform ? t('admin.channels.form.syncingModels') : t('admin.channels.form.syncLatestModels') }}
-                  </button>
-                  <button type="button" @click="addPricingEntry(sIdx)" class="text-xs text-primary-600 hover:text-primary-700">
-                    + {{ t('common.add', 'Add') }}
-                  </button>
-                </div>
-              </div>
-              <div
-                v-if="section.model_pricing.length === 0"
-                class="rounded border border-dashed border-gray-300 p-2 text-center text-xs text-gray-400 dark:border-dark-500"
-              >
-                {{ t('admin.channels.form.noPricingRules', 'No pricing rules yet. Click "Add" to create one.') }}
-              </div>
-              <div v-else class="space-y-2">
-                <PricingEntryCard
-                  v-for="(entry, idx) in section.model_pricing"
-                  :key="idx"
-                  :entry="entry"
-                  :platform="section.platform"
-                  :model-candidates="pricingModelCandidates[section.platform] || []"
-                  enable-time-pricing
-                  enable-tier-multipliers
-                  @update="updatePricingEntry(sIdx, idx, $event)"
-                  @remove="removePricingEntry(sIdx, idx)"
-                />
-              </div>
+              <label class="input-label text-xs mb-1">{{ t('admin.channels.form.modelPricing', 'Model Pricing') }}</label>
+              <ModelPricingEditor
+                :entries="section.model_pricing"
+                :model-candidates="pricingModelCandidates[section.platform] || []"
+                :excluded-models="section.excluded_model_pricing_models"
+                :platform="section.platform"
+                enable-time-pricing
+                enable-tier-multipliers
+                @update:entries="updateSectionPricing(sIdx, $event)"
+                @update:excluded-models="section.excluded_model_pricing_models = $event"
+              />
             </div>
 
             <!-- Account Stats Pricing Rules (per-platform, always visible) -->
@@ -640,7 +615,7 @@ import { apiIntervalsToForm, apiTimePricingToForm, createDefaultTimePricingForm,
 import type { AdminGroup, GroupPlatform } from '@/types'
 import type { Column } from '@/components/common/types'
 import { platformTextClass, platformBadgeLightClass, platformLabel as catalogPlatformLabel } from '@/utils/platformColors'
-import { listPlatformIds, supportsPricingModelSync } from '@/constants/platformCatalog'
+import { listPlatformIds } from '@/constants/platformCatalog'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
@@ -653,6 +628,7 @@ import Icon from '@/components/icons/Icon.vue'
 import PlatformIcon from '@/components/common/PlatformIcon.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import PricingEntryCard from '@/components/admin/channel/PricingEntryCard.vue'
+import ModelPricingEditor from '@/components/admin/channel/ModelPricingEditor.vue'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 import { useKeyedDebouncedSearch } from '@/composables/useKeyedDebouncedSearch'
 
@@ -701,6 +677,7 @@ interface PlatformSection {
   group_ids: number[]
   model_mapping: Record<string, string>
   model_pricing: PricingFormEntry[]
+  excluded_model_pricing_models: string[]
   web_search_emulation: boolean
   codex_image_generation_bridge: boolean
   bedrock_cc_compat: boolean
@@ -804,6 +781,7 @@ function addPlatformSection(platform: GroupPlatform) {
     group_ids: [],
     model_mapping: {},
     model_pricing: [],
+    excluded_model_pricing_models: [],
     web_search_emulation: false,
     codex_image_generation_bridge: false,
     bedrock_cc_compat: false,
@@ -885,7 +863,7 @@ async function loadPricingModelCandidates(section: PlatformSection) {
   pricingModelsLoading.value[section.platform] = true
   try {
     const lists = await Promise.all(groups.map(async group => {
-      const candidates = await adminAPI.groups.getModelAllowlistCandidates(group.id, section.platform)
+      const candidates = await adminAPI.groups.getSavedAccountRestrictionModels(group.id, section.platform)
       const allowlist = group.model_allowlist
       if (!allowlist?.enabled) return candidates
       const allowed = allowlist.models || []
@@ -905,81 +883,8 @@ async function loadPricingModelCandidates(section: PlatformSection) {
 }
 
 // ── Pricing helpers ──
-function addPricingEntry(sectionIdx: number) {
-  form.platforms[sectionIdx].model_pricing.push({
-    models: [],
-    billing_mode: 'token',
-    input_price: null,
-    output_price: null,
-    cache_write_price: null,
-    cache_write_1h_price: null,
-    cache_write_12h_price: null,
-    cache_read_price: null,
-    fast_multiplier: null,
-    flex_multiplier: null,
-    ultrafast_multiplier: null,
-    reasoning_effort_multipliers: null,
-    image_input_price: null,
-    image_output_price: null,
-    per_request_price: null,
-    intervals: [],
-    time_pricing: createDefaultTimePricingForm()
-  })
-}
-
-const syncingPlatform = ref<string | null>(null)
-
-async function syncLatestModels(sectionIdx: number) {
-  const section = form.platforms[sectionIdx]
-  if (!section || syncingPlatform.value || !supportsPricingModelSync(section.platform)) return
-  const platform = section.platform
-  syncingPlatform.value = platform
-  try {
-    const result = await adminAPI.channels.syncPricingModels(platform)
-    // Collect all model names already present in this platform's pricing entries
-    const existingModels = new Set<string>()
-    for (const entry of section.model_pricing) {
-      for (const m of entry.models) existingModels.add(m)
-    }
-    const newModels = result.models.filter(m => !existingModels.has(m))
-    if (newModels.length === 0) {
-      appStore.showSuccess(t('admin.channels.form.syncModelsAlreadyUpToDate'))
-      return
-    }
-    // Add new models as a single new pricing entry (user fills in prices)
-    section.model_pricing.push({
-      models: newModels,
-      billing_mode: 'token',
-      input_price: null,
-      output_price: null,
-      cache_write_price: null,
-      cache_write_1h_price: null,
-      cache_write_12h_price: null,
-      cache_read_price: null,
-      fast_multiplier: null,
-      flex_multiplier: null,
-      ultrafast_multiplier: null,
-      reasoning_effort_multipliers: null,
-      image_input_price: null,
-      image_output_price: null,
-      per_request_price: null,
-      intervals: [],
-      time_pricing: createDefaultTimePricingForm()
-    })
-    appStore.showSuccess(t('admin.channels.form.syncModelsSuccess', { count: newModels.length }))
-  } catch (error) {
-    appStore.showError(extractApiErrorMessage(error, t('admin.channels.form.syncModelsError')))
-  } finally {
-    syncingPlatform.value = null
-  }
-}
-
-function updatePricingEntry(sectionIdx: number, idx: number, updated: PricingFormEntry) {
-  form.platforms[sectionIdx].model_pricing.splice(idx, 1, updated)
-}
-
-function removePricingEntry(sectionIdx: number, idx: number) {
-  form.platforms[sectionIdx].model_pricing.splice(idx, 1)
+function updateSectionPricing(sectionIdx: number, entries: PricingFormEntry[]) {
+  form.platforms[sectionIdx].model_pricing = entries
 }
 
 // ── Model Mapping helpers ──
@@ -1157,6 +1062,7 @@ function accountStatsRulesToAPI(): AccountStatsPricingRule[] {
       })
     }
   }
+
   return rules
 }
 
@@ -1203,6 +1109,17 @@ function formToAPI(): { group_ids: number[], model_pricing: ChannelModelPricing[
         time_pricing: formTimePricingToAPI(entry.time_pricing)
       })
     }
+  }
+  const excludedPricingModels: Record<string, string[]> = {}
+  for (const section of form.platforms) {
+    if (section.excluded_model_pricing_models.length > 0) {
+      excludedPricingModels[section.platform] = [...section.excluded_model_pricing_models]
+    }
+  }
+  if (Object.keys(excludedPricingModels).length > 0) {
+    featuresConfig.model_pricing_excluded_models = excludedPricingModels
+  } else {
+    delete featuresConfig.model_pricing_excluded_models
   }
   const uniqueGroupIds = Array.from(new Set(group_ids))
 
@@ -1300,6 +1217,7 @@ function apiToForm(channel: Channel): PlatformSection[] {
 
     // Read web_search_emulation from features_config
     const fc = channel.features_config
+    const excludedPricingModels = fc?.model_pricing_excluded_models as Record<string, string[]> | undefined
     const wsEmulation = fc?.web_search_emulation as Record<string, boolean> | undefined
     const webSearchEnabled = wsEmulation?.[platform] === true
     const codexImageGenerationBridge = fc?.codex_image_generation_bridge as Record<string, boolean> | undefined
@@ -1313,6 +1231,7 @@ function apiToForm(channel: Channel): PlatformSection[] {
       group_ids: groupIds,
       model_mapping: { ...mapping },
       model_pricing: pricing,
+      excluded_model_pricing_models: [...(excludedPricingModels?.[platform] || [])],
       web_search_emulation: webSearchEnabled,
       codex_image_generation_bridge: codexImageGenerationBridgeEnabled,
       bedrock_cc_compat: bedrockCCCompatEnabled,

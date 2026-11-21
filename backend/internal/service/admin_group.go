@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -132,6 +133,81 @@ func (s *adminServiceImpl) GetGroupModelsListCandidates(ctx context.Context, id 
 		}
 	}
 	return candidates, nil
+}
+
+// GetGroupSavedAccountRestrictionModels returns only model names explicitly
+// saved in model_mapping by accounts assigned to the group. Unlike the group
+// allowlist picker, it does not add platform-wide default models.
+func (s *adminServiceImpl) GetGroupSavedAccountRestrictionModels(ctx context.Context, id int64, platform string) ([]string, error) {
+	if id <= 0 {
+		return nil, infraerrors.BadRequest("INVALID_GROUP_ID", "group ID must be positive")
+	}
+	platform = strings.TrimSpace(platform)
+	group, err := s.groupRepo.GetByIDLite(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if platform == "" {
+		platform = group.Platform
+	}
+	accounts, err := s.accountRepo.ListByGroup(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	seen := make(map[string]struct{})
+	models := make([]string, 0)
+	for _, account := range accounts {
+		if platform == PlatformComposite {
+			if !isConcreteRequestPlatform(account.Platform) {
+				continue
+			}
+		} else if account.Platform != platform {
+			continue
+		}
+		for _, model := range savedAccountRestrictionModels(account) {
+			model = strings.TrimSpace(model)
+			if model == "" {
+				continue
+			}
+			if _, exists := seen[model]; exists {
+				continue
+			}
+			seen[model] = struct{}{}
+			models = append(models, model)
+		}
+	}
+	sort.Strings(models)
+	return models, nil
+}
+
+func savedAccountRestrictionModels(account Account) []string {
+	if account.Credentials == nil {
+		return nil
+	}
+	models := make([]string, 0)
+	switch mapping := account.Credentials["model_mapping"].(type) {
+	case map[string]any:
+		for model := range mapping {
+			models = append(models, model)
+		}
+	case map[string]string:
+		for model := range mapping {
+			models = append(models, model)
+		}
+	}
+	// Keep compatibility with accounts created before model_mapping replaced
+	// the legacy model_whitelist field.
+	switch whitelist := account.Credentials["model_whitelist"].(type) {
+	case []any:
+		for _, raw := range whitelist {
+			if model, ok := raw.(string); ok {
+				models = append(models, model)
+			}
+		}
+	case []string:
+		models = append(models, whitelist...)
+	}
+	return models
 }
 
 func (s *adminServiceImpl) ListCompositeRoutes(ctx context.Context, groupID int64) ([]CompositeModelRoute, error) {
